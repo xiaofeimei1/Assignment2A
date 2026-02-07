@@ -11,19 +11,49 @@ This assignment is a task to connect PostgreSQL and R. My plan is to find a data
 
 There are other requirements about handling missing data and designing a database schema. I'll need to learn more about database schema.
 
-## Running Code
+## Connect to PostgreSQL
 
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+Connect to PostgreSQL
 
 ```{r}
-1 + 1
+library(DBI)
+library(RPostgres)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# for security concern, I set up password to be stored in environment variable. 
+db_password <- Sys.getenv("DB_PASSWORD")
+db_user <- "postgres"
+db_name <- "xmbd"
+db_host <- "localhost"
+db_port <- "5432"
+
+con <- dbConnect(
+  Postgres(),
+  dbname = "xmdb",
+  host = "localhost",
+  port = 5432,
+  user = "postgres",
+  password = Sys.getenv("DB_PASSWORD")
+)
+
+data <- dbGetQuery(con, "
+    SELECT u.name, m.title, r.rating
+    FROM ratings r
+    JOIN users u ON r.user_id = u.user_id
+    JOIN movies m ON r.movie_id = m.movie_id
+")
+
+print(head(data))
+dbDisconnect(con)
+
 ```
 
 You can add options to executable code like this
 
 ```{r}
-#| echo: false
-2 * 2
+
 ```
 
 The `echo: false` option disables the printing of code (only output is displayed).

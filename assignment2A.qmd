@@ -7,15 +7,13 @@ editor: visual
 
 ## Approach
 
-This assignment is a task to connect PostgreSQL and R. My plan is to find a data set about movie-rating first, save it to PstgreSQL, and query the database directly from R.
+This assignment requires connect PostgreSQL to R. My plan is to create a data set about movie-rating in PstgreSQL, then query and do analysis on the data set directly from R to show summary of movie review.
 
-There are other requirements about handling missing data and designing a database schema.
-
-After query the data frame in R, I'll do a simple analysis to show a summary of movie review.
+Key areas that I'm hoping to practice through this task is to create, edit database in PostgreSQL, and connect them securely in R. The code will be made public therefore password shouldn't be shown inside the code for security concern.
 
 ## Connect to PostgreSQL
 
-For security reason, password shouldn't be shown inside codes. We can create a environmental variable to store database password when connecting PostgreSQL to R.
+To create the connection withou reveal password in code, we can create a environmental variable to store database password when connecting PostgreSQL to R.
 
 ```{r}
 library(DBI)
@@ -48,8 +46,13 @@ data <- dbGetQuery(con, "
 ")
 
 print(head(data))
+```
 
+## Data Exploration 
 
+As shown in the result, there are 6 movies Zootopia 2, Dog Man, Superman, Elio, Avatar 3 and Send help. When asking user for 1-5 rating for each movie, they can not provide rating to movie that haven't watch, a missing value will be recorded in such case. Before do anlaysis, we will have to figure out a way to hand missing data, either ignore them or use a way to imputed those missing values. In this case, I choose to use the average to fill in the missing value. Now we are ready for next section, data analysis.
+
+```{r}
 full_data <- dbGetQuery(con, "
     SELECT u.name, m.title, m.genre, r.rating
     FROM ratings r
@@ -57,7 +60,7 @@ full_data <- dbGetQuery(con, "
     JOIN movies m ON r.movie_id = m.movie_id
 ")
 
-# Create a user-movie rating matrix (with missing values)
+# Create a user-movie rating matrix 
 rating_matrix <- full_data |>
   select(name, title, rating) |>
   pivot_wider(
@@ -67,71 +70,68 @@ rating_matrix <- full_data |>
 
 print(rating_matrix)
 
-# let's check missing data
+# check missing data
 missing_analysis <- rating_matrix |>
   summarise(across(where(is.numeric), ~sum(is.na(.)))) |>
   pivot_longer(everything(), names_to = "movie", values_to = "missing_count")
 
 print(missing_analysis)
 
-# Strategy 1: Mean imputation (replace NA with movie average)
-movie_means <- full_data %>%
-  group_by(title) %>%
+# to handle missing data, we replace NA with movie average
+movie_means <- full_data |>
+  group_by(title) |>
   summarise(movie_mean = mean(rating, na.rm = TRUE))
 
-imputed_data <- full_data %>%
-  left_join(movie_means, by = "title") %>%
+imputed_data <- full_data |>
+  left_join(movie_means, by = "title") |>
   mutate(rating_imputed = ifelse(is.na(rating), movie_mean, rating))
 
-# Calculate statistics
-# Average rating per movie (handling missing values)
-movie_stats <- full_data %>%
-  group_by(title, genre) %>%
+
+```
+
+## Data Analysis 
+
+Here I print out statistics in list to show movie name, average ratings and rating count. A bar plot is create to present the summary in order of high to low ratings. Movie Elio receives the highest rating. Followed by Zootopia 2, Superman and Send Help being on the second highest rating.
+
+```{r}
+#  statistics
+movie_stats <- full_data |>
+  group_by(title, genre) |>
   summarise(
     avg_rating = mean(rating, na.rm = TRUE),
     rating_count = n(),
     .groups = "drop"
-  ) %>%
+  ) |>
   arrange(desc(avg_rating))
 
 print(movie_stats)
 
-# Average rating per user
-user_stats <- full_data %>%
-  group_by(name) %>%
+# Average rating 
+user_stats <- full_data |>
+  group_by(name) |>
   summarise(
     avg_rating = mean(rating, na.rm = TRUE),
     movies_rated = n(),
     .groups = "drop"
-  ) %>%
+  ) |>
   arrange(desc(avg_rating))
 
 print(user_stats)
 
-# Visualization
+# plot
 ggplot(movie_stats, aes(x = reorder(title, avg_rating), y = avg_rating, fill = genre)) +
   geom_bar(stat = "identity") +
   coord_flip() +
   labs(title = "Average Movie Ratings", x = "Movie", y = "Average Rating (1-5)") +
   theme_minimal()
 
-# Create a complete user-item matrix for analysis
-complete_matrix <- full_data %>%
-  complete(name, title) %>%  # Creates all user-movie combinations
-  mutate(rating = ifelse(is.na(rating), NA, rating))
 
-# Save to CSV for future use
-write.csv(full_data, "movie_ratings_data.csv", row.names = FALSE)
 
 dbDisconnect(con)
-
- 
 ```
 
-You can add options to executable code like this
+## Conclusion
 
-```{r}
+Total 5 users provided their moving rating to 6 movies, we edit their ratings into database set up in PostegreSQL. In R, connection was established and data analysis show none of the 5 users have seen all movies from the list, which is understandable since those movies were all released recently. From their feedback, Elio shows the highest rating given by user Zac and Joe.
 
-```
-
-The `echo: false` option disables the printing of code (only output is displayed).
+If to expand this analysis further, we should certainly ask for more user input to make result more reliable as 1 or 2 low rating won't have such influence to the result.

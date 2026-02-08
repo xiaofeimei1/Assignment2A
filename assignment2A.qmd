@@ -9,11 +9,13 @@ editor: visual
 
 This assignment is a task to connect PostgreSQL and R. My plan is to find a data set about movie-rating first, save it to PstgreSQL, and query the database directly from R.
 
-There are other requirements about handling missing data and designing a database schema. I'll need to learn more about database schema.
+There are other requirements about handling missing data and designing a database schema.
+
+After query the data frame in R, I'll do a simple analysis to show a summary of movie review.
 
 ## Connect to PostgreSQL
 
-Connect to PostgreSQL
+For security reason, password shouldn't be shown inside codes. We can create a environmental variable to store database password when connecting PostgreSQL to R.
 
 ```{r}
 library(DBI)
@@ -22,7 +24,7 @@ library(dplyr)
 library(ggplot2)
 library(tidyr)
 
-# for security concern, I set up password to be stored in environment variable. 
+# set up the database password to be stored in environment variable so it won't be shwon in code here.
 db_password <- Sys.getenv("DB_PASSWORD")
 db_user <- "postgres"
 db_name <- "xmbd"
@@ -46,8 +48,84 @@ data <- dbGetQuery(con, "
 ")
 
 print(head(data))
+
+
+full_data <- dbGetQuery(con, "
+    SELECT u.name, m.title, m.genre, r.rating
+    FROM ratings r
+    JOIN users u ON r.user_id = u.user_id
+    JOIN movies m ON r.movie_id = m.movie_id
+")
+
+# Create a user-movie rating matrix (with missing values)
+rating_matrix <- full_data |>
+  select(name, title, rating) |>
+  pivot_wider(
+    names_from = title,
+    values_from = rating,
+    values_fill = NA ) #
+
+print(rating_matrix)
+
+# let's check missing data
+missing_analysis <- rating_matrix |>
+  summarise(across(where(is.numeric), ~sum(is.na(.)))) |>
+  pivot_longer(everything(), names_to = "movie", values_to = "missing_count")
+
+print(missing_analysis)
+
+# Strategy 1: Mean imputation (replace NA with movie average)
+movie_means <- full_data %>%
+  group_by(title) %>%
+  summarise(movie_mean = mean(rating, na.rm = TRUE))
+
+imputed_data <- full_data %>%
+  left_join(movie_means, by = "title") %>%
+  mutate(rating_imputed = ifelse(is.na(rating), movie_mean, rating))
+
+# Calculate statistics
+# Average rating per movie (handling missing values)
+movie_stats <- full_data %>%
+  group_by(title, genre) %>%
+  summarise(
+    avg_rating = mean(rating, na.rm = TRUE),
+    rating_count = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(avg_rating))
+
+print(movie_stats)
+
+# Average rating per user
+user_stats <- full_data %>%
+  group_by(name) %>%
+  summarise(
+    avg_rating = mean(rating, na.rm = TRUE),
+    movies_rated = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(avg_rating))
+
+print(user_stats)
+
+# Visualization
+ggplot(movie_stats, aes(x = reorder(title, avg_rating), y = avg_rating, fill = genre)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Average Movie Ratings", x = "Movie", y = "Average Rating (1-5)") +
+  theme_minimal()
+
+# Create a complete user-item matrix for analysis
+complete_matrix <- full_data %>%
+  complete(name, title) %>%  # Creates all user-movie combinations
+  mutate(rating = ifelse(is.na(rating), NA, rating))
+
+# Save to CSV for future use
+write.csv(full_data, "movie_ratings_data.csv", row.names = FALSE)
+
 dbDisconnect(con)
 
+ 
 ```
 
 You can add options to executable code like this
